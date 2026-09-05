@@ -33,10 +33,10 @@ def main():
     extra_rt = sys.argv[4:]
     os.makedirs(out_dir, exist_ok=True)
     cc = [CLANG, "--target=" + TARGET, "-ffreestanding", "-fno-builtin",
-          "-fno-stack-protector", "-fno-pic", "-O2", "-fno-stack-protector"]
+          "-fno-stack-protector", "-fno-pic", "-O2", "-I", HERE]
     # crt0.S -> crt0.o
     run(cc + ["-c", os.path.join(HERE, "crt0.S"), "-o", os.path.join(out_dir, "crt0.o")])
-    # crtrt.c + extra rt -> objects
+    # crtrt.c + extra rt -> objects (crtrt always; thread.c/pthread.c/others as extra_rt)
     rt_srcs = [os.path.join(HERE, "crtrt.c")] + [os.path.join(HERE, x) for x in extra_rt]
     rt_objs = []
     for i, s in enumerate(rt_srcs):
