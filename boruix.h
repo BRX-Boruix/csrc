@@ -27,6 +27,12 @@ ulong boruix_thread_exit(int code);     /* 0x34: never returns */
 ulong boruix_gettid(void);              /* 0x38: own pid/thread id */
 ulong boruix_getpid(void);              /* 0x39: group leader pid / tgid */
 
+/* ---- sync (thread.c): kernel futex-style sync words (ADR-032) ---- */
+ulong boruix_sync_create(ulong init_value);    /* 0x71 -> sync_id */
+ulong boruix_sync_wait(ulong id, ulong expected, ulong timeout_ns); /* 0x72 -> cur value */
+ulong boruix_sync_wake(ulong id, ulong value, ulong n);            /* 0x73 -> woken */
+long  boruix_sync_delete(ulong id);            /* 0x74 -> 0/Busy */
+
 /* ---- error names ---- */
 #define BX_ENOTSUP (-95L)
 #define BX_ENOENT  (-2L)

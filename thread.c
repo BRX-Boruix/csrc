@@ -30,6 +30,24 @@ ulong boruix_thread_exit(int code) {
 ulong boruix_gettid(void) {
     return boruix_syscall(0x38UL, 0, 0, 0);
 }
+
+/* SYS_SYNC_CREATE 0x71: a1=init_value -> sync_id (futex-style kernel sync word) */
+ulong boruix_sync_create(ulong init_value) {
+    return boruix_syscall(0x71UL, init_value, 0, 0);
+}
+/* SYS_SYNC_WAIT 0x72: a1=id a2=expected a3=timeout_ns(0=forever). Blocks while value==expected;
+ * returns current value (may spin WouldBlock? mirror callers). Value must be bit63-clear. */
+ulong boruix_sync_wait(ulong id, ulong expected, ulong timeout_ns) {
+    return boruix_syscall(0x72UL, id, expected, timeout_ns);
+}
+/* SYS_SYNC_WAKE 0x73: a1=id a2=value a3=n -> actually woken count */
+ulong boruix_sync_wake(ulong id, ulong value, ulong n) {
+    return boruix_syscall(0x73UL, id, value, n);
+}
+/* SYS_SYNC_DELETE 0x74: a1=id -> 0 or Busy if waiters remain */
+long boruix_sync_delete(ulong id) {
+    return boruix_syscall(0x74UL, id, 0, 0);
+}
 /* SYS_TASK_GETPID 0x39: group leader pid / tgid. */
 ulong boruix_getpid(void) {
     return boruix_syscall(0x39UL, 0, 0, 0);
