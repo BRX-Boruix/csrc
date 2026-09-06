@@ -28,7 +28,8 @@ int pthread_equal(pthread_t a, pthread_t b);
  * user atomic state/field plus the kernel SYNC park id used to block/wake. */
 typedef struct bx_mutex {
     volatile int state;    /* 0 unlocked,1 locked(no waiter),2 locked(may have waiter) */
-    unsigned long park_id; /* kernel SYNC word (value kept 0); 0 = uninitialised */
+    volatile unsigned long epoch; /* bumped on each unlock-with-waiter; mirrored to SYNC word */
+    unsigned long park_id; /* kernel SYNC word; word value == epoch (never 0-only) */
     int _init;
 } pthread_mutex_t;
 typedef struct bx_cond {
@@ -38,6 +39,7 @@ typedef struct bx_cond {
 } pthread_cond_t;
 typedef struct bx_sem {
     volatile int count;
+    volatile unsigned long epoch; /* bumped on each post; mirrored to SYNC word */
     unsigned long park_id;
     int _init;
 } bx_sem_t;
