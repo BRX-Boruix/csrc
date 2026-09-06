@@ -33,6 +33,10 @@ ulong boruix_sync_wait(ulong id, ulong expected, ulong timeout_ns); /* 0x72 -> c
 ulong boruix_sync_wake(ulong id, ulong value, ulong n);            /* 0x73 -> woken */
 long  boruix_sync_delete(ulong id);            /* 0x74 -> 0/Busy */
 
+/* ---- minimal stdio (stdio.c, freestanding, %s %c %d %u %x %%) ---- */
+int bx_printf(const char* fmt, ...);
+int bx_snprintf(char* out, unsigned long cap, const char* fmt, ...);
+
 /* ---- error names ---- */
 #define BX_ENOTSUP (-95L)
 #define BX_ENOENT  (-2L)
