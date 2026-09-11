@@ -18,7 +18,64 @@ import os, subprocess, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 CLANG_BIN = os.environ.get("CLANG_BIN", r"F:\clang\18.1.8x86_64\bin")
 CLANG = os.path.join(CLANG_BIN, "clang.exe")
-LLD = os.path.join(CLANG_BIN, "ld.lld.exe")
+
+
+def _pick_linker():
+    """Return (path, extra_args) for a usable LLD.
+
+    The clang-bundled ld.lld.exe is preferred, but on this machine an endpoint
+    security product intermittently denies executing it ("Access is denied",
+    exit 1) while the adjacent clang.exe keeps working. That is an environment
+    fault, not a toolchain problem, and it blocks every C link with no usable
+    diagnostic from subprocess.
+
+    rust-lld ships with the Rust toolchain, is the SAME LLD, and runs from a
+    location the product allows. It is a multi-flavor driver, so it needs
+    `-flavor gnu` to behave like ld.lld; the clang ld.lld does not accept that
+    flag. Probing beats hardcoding a path: whichever actually executes is used,
+    and the caller is told which one, so the choice is visible rather than
+    silent.
+    """
+    clang_lld = os.path.join(CLANG_BIN, "ld.lld.exe")
+    # Toolchains live under RUSTUP_HOME, NOT CARGO_HOME (which holds the registry
+    # and bin). Reading CARGO_HOME here found no toolchains at all and silently
+    # produced an empty candidate list -- so probe both, and from each also try
+    # the sibling layout used when rustup is not in play.
+    roots = [
+        os.environ.get("RUSTUP_HOME", ""),
+        os.environ.get("CARGO_HOME", ""),
+        r"D:\Rust\Rustup",
+        r"D:\Rust\Cargo",
+    ]
+    toolchains_dirs = [os.path.join(r, "toolchains") for r in roots if r]
+    candidates = []
+    for toolchains in toolchains_dirs:
+        if not os.path.isdir(toolchains):
+            continue
+        for tc in sorted(os.listdir(toolchains)):
+            p = os.path.join(
+                toolchains, tc, "lib", "rustlib", "x86_64-pc-windows-msvc",
+                "bin", "rust-lld.exe",
+            )
+            if os.path.isfile(p) and p not in candidates:
+                candidates.append(p)
+    for path, args in [(clang_lld, [])] + [(c, ["-flavor", "gnu"]) for c in candidates]:
+        try:
+            probe = subprocess.run(
+                [path] + args + ["--version"],
+                capture_output=True, timeout=30,
+            )
+            # LLD prints its version banner; any successful exec proves we may run it.
+            if b"LLD" in probe.stdout or b"LLD" in probe.stderr:
+                return path, args
+        except (OSError, subprocess.SubprocessError):
+            continue
+    raise SystemExit(
+        "no usable LLD: tried " + clang_lld + " and " + str(candidates)
+    )
+
+
+LLD, LLD_ARGS = _pick_linker()
 TARGET = "x86_64-unknown-none"
 
 def run(cmd):
@@ -49,7 +106,7 @@ def main():
     # link
     out = os.path.join(out_dir, prog + ".elf")
     objs = [os.path.join(out_dir, "crt0.o")] + rt_objs + [prog_o]
-    run([LLD, "-o", out, "-e", "_start", "-nostdlib", "--no-dynamic-linker"] + objs +
+    run([LLD] + LLD_ARGS + ["-o", out, "-e", "_start", "-nostdlib", "--no-dynamic-linker"] + objs +
         ["-z", "noexecstack", "-T", os.path.join(HERE, "linker.ld")])
     print(f"[crt] {prog}.elf -> {out}")
     return 0
