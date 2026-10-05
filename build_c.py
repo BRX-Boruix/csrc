@@ -7,6 +7,7 @@ then links: crt0.o + crtrt.o + <prog>.o [+ extra rt .o] -> <prog>.elf (ET_EXEC, 
 
 Usage:
   python build_c.py <prog_name> <prog_src_dir> <out_dir> [extra_rt_c1 extra_rt_c2 ...]
+  python build_c.py --rt-only <out_dir>   # 只产出 sysroot 的 C 运行时对象（user_main.o）
   - prog_name: e.g. chelldemo
   - prog_src_dir: dir containing <prog_name>.c (single translation unit)
   - out_dir: where <prog_name>.elf is written
@@ -83,14 +84,41 @@ def run(cmd):
     if r.returncode != 0:
         raise SystemExit(f"command failed ({r.returncode}): {' '.join(cmd)}")
 
+def cc_flags():
+    """freestanding C 编译旗标（**单点**：main() 与 sysroot 运行时构建共用）。"""
+    return [CLANG, "--target=" + TARGET, "-ffreestanding", "-fno-builtin",
+            "-fno-stack-protector", "-fno-pic", "-O2", "-I", HERE]
+
+
+def build_sysroot_rt(out_dir):
+    """产出 sysroot 需要的 C 运行时对象（3P1-2）。返回 0 成功。
+
+    目前只有 user_main.o：系统入口 `_start`（libsys 提供，调 `user_main`）与 C 入口
+    `main` 之间的桥接。**不含 crt0.o**——crt0.S 自带强 `_start`，与 libc.a 经 libsys
+    提供的入口互斥（实测 duplicate symbol: _start，见 user_main.c 注释）。
+    """
+    os.makedirs(out_dir, exist_ok=True)
+    out = os.path.join(out_dir, "user_main.o")
+    run(cc_flags() + ["-c", os.path.join(HERE, "user_main.c"), "-o", out])
+    print(f"[crt] user_main.o -> {out}")
+    return 0
+
+
 def main():
+    if len(sys.argv) >= 2 and sys.argv[1] == "--print-toolchain":
+        # 供 sysroot 安装器取用**已验证可用**的 clang/lld（避免在别处重复探测逻辑）。
+        print("CLANG=" + CLANG)
+        print("LLD=" + LLD)
+        print("LLD_ARGS=" + " ".join(LLD_ARGS))
+        return 0
+    if len(sys.argv) >= 3 and sys.argv[1] == "--rt-only":
+        return build_sysroot_rt(sys.argv[2])
     if len(sys.argv) < 4:
         print(__doc__); return 1
     prog, src_dir, out_dir = sys.argv[1], sys.argv[2], sys.argv[3]
     extra_rt = sys.argv[4:]
     os.makedirs(out_dir, exist_ok=True)
-    cc = [CLANG, "--target=" + TARGET, "-ffreestanding", "-fno-builtin",
-          "-fno-stack-protector", "-fno-pic", "-O2", "-I", HERE]
+    cc = cc_flags()
     # crt0.S -> crt0.o
     run(cc + ["-c", os.path.join(HERE, "crt0.S"), "-o", os.path.join(out_dir, "crt0.o")])
     # crtrt.c + extra rt -> objects (crtrt always; thread.c/pthread.c/others as extra_rt)
