@@ -54,7 +54,7 @@ static const char *bx_exec_name(const char *const *argv, long argc) {
         if (p[0] == 0) {
             break;                    /* AT_NULL */
         }
-        if (p[0] == 15) {             /* AT_EXECFN */
+        if (p[0] == 31) {             /* AT_EXECFN（与 Linux 同值；单点见 libsys::auxv::AT_EXECFN） */
             return (const char *)p[1];
         }
     }
