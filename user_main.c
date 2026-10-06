@@ -13,6 +13,16 @@
  */
 extern int main(int argc, char **argv);
 
+/* 注册入口参数（定义在 libc，声明见 libc/include/boruix.h）。
+ *
+ * 此处**重复声明而不 include**：本文件是 sysroot 的**链接配方**之一，编译时不依赖 sysroot
+ * 的 include 路径（install 阶段只把它当一个裸目标文件编）。
+ *
+ * 为什么必须在这里调用：环境（envp）在**进程初始栈**上，只能由入口的 argc/argv 定位；
+ * libc 的 getenv/environ 要在任意调用点可用，故必须在入口捕获一次。这是**单点**。 */
+extern void __boruix_init_environ(long argc, const char *const *argv);
+
 int user_main(long argc, const char *const *argv) {
+    __boruix_init_environ(argc, argv);
     return main((int)argc, (char **)argv);
 }
