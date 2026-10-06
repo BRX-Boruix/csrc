@@ -7,7 +7,9 @@ then links: crt0.o + crtrt.o + <prog>.o [+ extra rt .o] -> <prog>.elf (ET_EXEC, 
 
 Usage:
   python build_c.py <prog_name> <prog_src_dir> <out_dir> [extra_rt_c1 extra_rt_c2 ...]
-  python build_c.py --rt-only <out_dir>   # 只产出 sysroot 的 C 运行时对象（user_main.o）
+  python build_c.py --rt-only <out_dir>   # 只产出 sysroot 的 C 运行时对象
+                                          #   user_main.o      —— argv[0]=整条命令行（BORUIX 原生语义）
+                                          #   user_main_argv.o —— 拆成 POSIX argv 数组（第三方程序用）
   - prog_name: e.g. chelldemo
   - prog_src_dir: dir containing <prog_name>.c (single translation unit)
   - out_dir: where <prog_name>.elf is written
@@ -93,14 +95,18 @@ def cc_flags():
 def build_sysroot_rt(out_dir):
     """产出 sysroot 需要的 C 运行时对象（3P1-2）。返回 0 成功。
 
-    目前只有 user_main.o：系统入口 `_start`（libsys 提供，调 `user_main`）与 C 入口
-    `main` 之间的桥接。**不含 crt0.o**——crt0.S 自带强 `_start`，与 libc.a 经 libsys
-    提供的入口互斥（实测 duplicate symbol: _start，见 user_main.c 注释）。
+    两个入口桥接（**二选一**，链接时显式挑）：
+      - `user_main.o`      ：argv[0] = 整条命令行（BORUIX 原生语义，既有程序按此写）；
+      - `user_main_argv.o` ：把命令行拆成 POSIX argv 数组（第三方程序如 tcc 需要）。
+    两者都**不含 crt0.o**——crt0.S 自带强 `_start`，与 libc.a 经 libsys 提供的入口互斥
+    （实测 duplicate symbol: _start，见 user_main.c 注释）。
     """
     os.makedirs(out_dir, exist_ok=True)
-    out = os.path.join(out_dir, "user_main.o")
-    run(cc_flags() + ["-c", os.path.join(HERE, "user_main.c"), "-o", out])
-    print(f"[crt] user_main.o -> {out}")
+    for src, obj in (("user_main.c", "user_main.o"),
+                     ("user_main_argv.c", "user_main_argv.o")):
+        out = os.path.join(out_dir, obj)
+        run(cc_flags() + ["-c", os.path.join(HERE, src), "-o", out])
+        print(f"[crt] {obj} -> {out}")
     return 0
 
 
