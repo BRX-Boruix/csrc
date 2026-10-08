@@ -22,7 +22,27 @@ extern int main(int argc, char **argv);
  * libc 的 getenv/environ 要在任意调用点可用，故必须在入口捕获一次。这是**单点**。 */
 extern void __boruix_init_environ(long argc, const char *const *argv);
 
+/* C++ 静态构造/析构数组：由 `csrc/linker.ld` 定义（放在 `.data` 内，页对齐理由见该文件）。
+ *
+ * 为什么遍历在这里、而不是在 `crt0.S`：sysroot 的 C 链接配方走的是 **libsys 的 `_start` ->
+ * `user_main`**，而 `crt0.S` 自带**强** `_start`，两者互斥（见上文 duplicate symbol 说明）。
+ * 故本文件是唯一入口点——**单点**。 */
+extern void (*__init_array_start[])(void);
+extern void (*__init_array_end[])(void);
+extern void (*__fini_array_start[])(void);
+extern void (*__fini_array_end[])(void);
+
 int user_main(long argc, const char *const *argv) {
+    /* 环境必须先就位：构造函数可能读 getenv。 */
     __boruix_init_environ(argc, argv);
-    return main((int)argc, (char **)argv);
+    /* 构造：**正序**（优先级已在链接期由 SORT_BY_INIT_PRIORITY 排好）。 */
+    for (void (**p)(void) = __init_array_start; p < __init_array_end; p++) {
+        (*p)();
+    }
+    int rc = main((int)argc, (char **)argv);
+    /* 析构：**逆序**（与构造相反，C++ 契约）。 */
+    for (void (**p)(void) = __fini_array_end; p > __fini_array_start;) {
+        (*--p)();
+    }
+    return rc;
 }
