@@ -22,6 +22,8 @@
  * - 词数上限 64，超出即停止（不越界、不静默截断成错误内容）。
  */
 
+#include "boruix_crt.h"
+
 extern int main(int argc, char **argv);
 extern void __boruix_init_environ(long argc, const char *const *argv);
 
@@ -70,6 +72,8 @@ int user_main(long argc, const char *const *argv) {
 
     /* 环境注册与 user_main.c 同一单点（getenv/environ 才可用）。 */
     __boruix_init_environ(argc, argv);
+    /* C++ 静态构造：与 user_main.c **同一单点**（csrc/boruix_crt.h）。 */
+    __boruix_run_ctors();
 
     /* 命令行 = argv[0]（shell 已剥程序名）；无命令行时为空串。 */
     s = (argc >= 1 && argv && argv[0]) ? argv[0] : "";
@@ -98,5 +102,9 @@ int user_main(long argc, const char *const *argv) {
     }
     av[n] = 0;
 
-    return main(n, av);
+    {
+        int rc = main(n, av);
+        __boruix_run_dtors();
+        return rc;
+    }
 }
