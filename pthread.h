@@ -37,12 +37,16 @@ typedef struct bx_cond {
     unsigned long park_id;
     int _init;
 } pthread_cond_t;
+/* 与 libc/include/semaphore.h **共享守卫宏**：两侧布局相同、可互换，同时包含也不重复 typedef。 */
+#ifndef BORUIX_BX_SEM_T_DEFINED
+#define BORUIX_BX_SEM_T_DEFINED
 typedef struct bx_sem {
     volatile int count;
     volatile unsigned long epoch; /* bumped on each post; mirrored to SYNC word */
     unsigned long park_id;
     int _init;
 } bx_sem_t;
+#endif /* BORUIX_BX_SEM_T_DEFINED */
 
 /* ---- mutex ---- */
 int pthread_mutex_init(pthread_mutex_t* m, const void* attr);
