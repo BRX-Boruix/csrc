@@ -28,6 +28,15 @@ static inline int cas_int(volatile int* p, int exp, int des) {
     int e = exp; return __atomic_compare_exchange_n(p, &e, des, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE) ? 1 : 0;
 }
 static inline int xchg_int(volatile int* p, int v) { return __atomic_exchange_n(p, v, __ATOMIC_ACQ_REL); }
+/* epoch 是 unsigned long（64 位），**不能用 ld_rlx 读**：ld_rlx 的参数是 `const volatile int*`，
+ * 那是按 32 位读并返回 int，只会取到 epoch 的低位。`boruix_sync_wait` 的期望值参数是 u64，
+ * 两边宽度不一致时「快照 epoch → 进内核比较」这条无丢失唤醒协议的语义就是错的。
+ * 实测：clang 23.1.5 对 `ld_rlx(&p->epoch)` 直接报 error（-Wincompatible-pointer-types），
+ * 编译中断——这处不一致此前没有被拦住过，本轮才暴露。
+ * 这里是**按真实宽度读**，与 `boruix_sync_wait` 的 u64 参数对齐。 */
+static inline unsigned long ld_rlx_ul(const volatile unsigned long* p) {
+    return __atomic_load_n(p, __ATOMIC_RELAXED);
+}
 
 /* ---- mutex ---- */
 int pthread_mutex_init(pthread_mutex_t* m, const void* attr) {
@@ -51,7 +60,7 @@ int pthread_mutex_lock(pthread_mutex_t* m) {
          * epoch we snapshot. The unlock bumps epoch (and the SYNC word value) BEFORE waking,
          * so a release that lands in our decide-to-park window makes the kernel re-check
          * (word != expected) return immediately instead of sleeping on a free mutex. */
-        unsigned long e = ld_rlx(&p->epoch);
+        unsigned long e = ld_rlx_ul(&p->epoch);
         if (ld_rlx(&p->state) != 2) continue;          /* freed during setup: retry */
         (void)boruix_sync_wait(p->park_id, e, 0);      /* block unless epoch advanced */
         if (cas_int(&p->state, 0, 2)) return 0;        /* acquired (keep waiters flag) */
@@ -144,7 +153,7 @@ int sem_wait(bx_sem_t* s) {
     for (;;) {
         int c = ld_rlx(&p->count);
         if (c > 0 && cas_int(&p->count, c, c - 1)) return 0; /* decrement if positive */
-        unsigned long e = ld_rlx(&p->epoch);                 /* snapshot before deciding */
+        unsigned long e = ld_rlx_ul(&p->epoch);              /* snapshot before deciding */
         if (ld_rlx(&p->count) > 0) continue;                 /* a post arrived: retry */
         /* A post in the decide-to-park window bumps epoch+SYNC word -> kernel re-check
          * returns immediately (word != expected) so we never sleep on an available count. */
