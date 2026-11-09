@@ -16,10 +16,33 @@ Usage:
   - extra_rt_cN: additional runtime .c under csrc to compile+link (e.g. malloc.c)
 Calls the LLVM clang/lld toolchain. Zero external deps beyond the local clang install.
 """
-import os, subprocess, sys
+import os, shutil, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CLANG_BIN = os.environ.get("CLANG_BIN", r"F:\clang\18.1.8x86_64\bin")
+def _project_env(key):
+    """读项目根 .env 里的键（与 tools/tools_build/config.py 同一文件、同一语法）。
+
+    为什么需要：CLANG_BIN 此前默认写死 `F:\\clang\\18.1.8x86_64\\bin`——项目从 F: 搬到 D:
+    之后该路径不存在，而报错只说「no usable LLD」，把「clang 不在那儿」误读成「没有 LLD」。
+    改由 .env 给出本机实际路径（与 I686_ELF_GCC_DIR / MSYS2_DIR 同一条约定），
+    环境变量优先（便于 CI 用一次性覆盖）。
+    """
+    env_file = os.path.join(os.path.dirname(HERE), ".env")
+    if not os.path.isfile(env_file):
+        return ""
+    with open(env_file, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, _, v = line.partition("=")
+            if k.strip() == key:
+                return v.strip().strip('"').strip("'")
+    return ""
+
+
+# 本机 clang 的 bin 目录：环境变量 → .env → 空（空则 _pick_linker 会如实报错并列出试过什么）。
+CLANG_BIN = os.environ.get("CLANG_BIN") or _project_env("CLANG_BIN")
 CLANG = os.path.join(CLANG_BIN, "clang.exe")
 
 
@@ -47,11 +70,28 @@ def _pick_linker():
     roots = [
         os.environ.get("RUSTUP_HOME", ""),
         os.environ.get("CARGO_HOME", ""),
-        r"D:\Rust\Rustup",
-        r"D:\Rust\Cargo",
     ]
     toolchains_dirs = [os.path.join(r, "toolchains") for r in roots if r]
     candidates = []
+    # 问 rustc 自己的 sysroot —— 这是**权威答案**。
+    # 不能从 shutil.which("rustc") 推：那是 rustup 的 shim（~\\.cargo\\bin\\rustc.EXE），
+    # 推导出来的根是 C:\\Users，底下没有 toolchains（实测）。也不能写死盘符——
+    # 此前写死 D:\\Rust\\Rustup / D:\\Rust\\Cargo，项目从 F: 搬到 D: 之后候选表变空，
+    # 报错只说「no usable LLD」，让人以为是磁盘上没有 LLD。
+    try:
+        sysroot = subprocess.run(
+            ["rustc", "--print", "sysroot"],
+            capture_output=True, timeout=30,
+        ).stdout.decode("utf-8", "replace").strip()
+    except (OSError, subprocess.SubprocessError):
+        sysroot = ""
+    if sysroot:
+        # <sysroot> = <root>\\toolchains\\<tc>；rust-lld 在 <sysroot>\\lib\\rustlib\\<host>\\bin
+        p_lld = os.path.join(
+            sysroot, "lib", "rustlib", "x86_64-pc-windows-msvc", "bin", "rust-lld.exe",
+        )
+        if os.path.isfile(p_lld) and p_lld not in candidates:
+            candidates.append(p_lld)
     for toolchains in toolchains_dirs:
         if not os.path.isdir(toolchains):
             continue
