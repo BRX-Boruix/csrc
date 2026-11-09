@@ -1,4 +1,5 @@
 _build/
 *.o
 *.elf
-
+__pycache__/
+*.pyc
